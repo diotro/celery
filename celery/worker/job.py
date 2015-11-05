@@ -425,6 +425,9 @@ class Request(object):
             if isinstance(exc, Retry):
                 return self.on_retry(exc_info)
 
+            print "in on_failure"
+            print self.delivery_info
+
             # These are special cases where the process would not have had
             # time to write the result.
             if self.store_errors:
