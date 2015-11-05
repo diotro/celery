@@ -425,9 +425,6 @@ class Request(object):
             if isinstance(exc, Retry):
                 return self.on_retry(exc_info)
 
-            print "in on_failure"
-            print self.delivery_info
-
             # These are special cases where the process would not have had
             # time to write the result.
             if self.store_errors:
@@ -440,17 +437,22 @@ class Request(object):
                         'terminated', True, string(exc), False)
                     send_failed_event = False  # already sent revoked event
             # (acks_late) acknowledge after result stored.
+            #
+            # NOTE (cconlon) Klaviyo found out this does not behave as expected
+            # for our use case. Messages were being ack'd on SIGKILL task
+            # shutdowns / failures, but we want our idempotent tasks to be
+            # retried by the next worker / task. If the error here is of type
+            # WorkerLostError (from a SIGKILL shutdown or failure), we want to
+            # requeue this message, otherwise ack it like normal.
+            #
+            # The plan here is to upgrade to the latest celery version once
+            # bandwidth allows, and abandon this fork.
             if self.task.acks_late:
-                # requeue = self.delivery_info.get('redelivered', None) is False
-                reject = (
-                    self.task.reject_on_worker_lost and
-                    isinstance(exc, WorkerLostError)
-                )
-                if reject:
+                if isinstance(exc, WorkerLostError):
                     self.reject(requeue=True)
                 else:
                     self.acknowledge()
-                # self.acknowledge()
+
         self._log_error(exc_info, send_failed_event=send_failed_event)
 
     def _log_error(self, einfo, send_failed_event=True):
